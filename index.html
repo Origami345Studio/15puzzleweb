@@ -181,9 +181,9 @@
     </div>
 
     <div id="alphaSection">
-        <div id="alphaLabel">Alpha (α): 0</div>
+        <div id="alphaLabel">Aura (α): 0</div>
         <div id="scrollContainer">
-            <button id="upgradeButton" class="alphaButton" disabled>More Alpha (Cost: 1α)</button>
+            <button id="upgradeButton" class="alphaButton" disabled>More Aura (Cost: 1α)</button>
             <button id="grid4Upgrade" class="alphaButton" disabled>Unlock 4x4 Grid (Cost: 25α)</button>
             <button id="grid5Upgrade" class="alphaButton" disabled>Unlock 5x5 Grid (Cost: 375α)</button>
         </div>
@@ -510,8 +510,8 @@
             }
 
             updateAlphaDisplay() {
-                this.alphaLabel.textContent = `Alpha (α): ${this.alpha}`;
-                this.upgradeButton.textContent = `More Alpha (Cost: ${this.fibCost}α)`;
+                this.alphaLabel.textContent = `Aura (α): ${this.alpha}`;
+                this.upgradeButton.textContent = `More Aura (Cost: ${this.fibCost}α)`;
                 this.upgradeButton.disabled = this.alpha < this.fibCost;
                 this.grid4Upgrade.disabled = this.alpha < 25 || this.has4x4;
                 this.grid5Upgrade.disabled = this.alpha < 375 || !this.has4x4 || this.has5x5;
