@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            background: #f0f0f0;
+        }
+
+        #timeContainer {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            font-size: 1.5em;
+            height: 60px;
+        }
+
+        #puzzleSection {
+            flex: 0.6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #gridSelector {
+            padding: 10px;
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+
+        #puzzleContainer {
+            width: 90%;
+            aspect-ratio: 1;
+            background: #fff;
+            border-radius: 10px;
+            padding: 5px;
+        }
+
+        #puzzleGrid {
+            display: grid;
+            gap: 5px;
+            height: 100%;
+        }
+
+        #puzzleGrid.grid-3 {
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+        }
+
+        #puzzleGrid.grid-4 {
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+        }
+
+        #puzzleGrid.grid-5 {
+            grid-template-columns: repeat(5, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+        }
+
+        .tile {
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 2em;
+            cursor: pointer;
+        }
+
+        #puzzleGrid.grid-4 .tile {
+            font-size: 1.5em;
+        }
+
+        #puzzleGrid.grid-5 .tile {
+            font-size: 1.2em;
+        }
+
+        .tile:empty {
+            background: #eee;
+            cursor: default;
+        }
+
+        #message {
+            height: 30px;
+            text-align: center;
+            color: #27ae60;
+            font-size: 1em;
+        }
+
+        #resetButton {
+            width: 80%;
+            height: 50px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.2em;
+            cursor: pointer;
+        }
+
+        #alphaSection {
+            flex: 0.3;
+            display: flex;
+            flex-direction: column;
+            margin-top: 10px;
+        }
+
+        #alphaLabel {
+            text-align: center;
+            height: 40px;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        #scrollContainer {
+            flex: 1;
+            overflow-y: auto;
+            background: white;
+            border-radius: 10px;
+            padding: 5px;
+        }
+
+        .alphaButton {
+            height: 60px;
+            margin: 5px 0;
+            background: #2ecc71;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.2em;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        .alphaButton:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+        }
+
+        .placeholder {
+            height: 60px;
+            margin: 5px 0;
+            background: #bdc3c7;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div id="timeContainer">
+        <div id="timeLabel">Time: 0.00s</div>
+        <div id="bestTimeLabel">Best: --</div>
+    </div>
+
+    <div id="puzzleSection">
+        <select id="gridSelector" disabled>
+            <option value="3">3x3 Grid</option>
+            <option value="4" disabled>4x4 Grid (Locked)</option>
+            <option value="5" disabled>5x5 Grid (Locked)</option>
+        </select>
+        <div id="puzzleContainer">
+            <div id="puzzleGrid" class="grid-3"></div>
+        </div>
+        <div id="message"></div>
+        <button id="resetButton">Reset</button>
+    </div>
+
+    <div id="alphaSection">
+        <div id="alphaLabel">Alpha (α): 0</div>
+        <div id="scrollContainer">
+            <button id="upgradeButton" class="alphaButton" disabled>More Alpha (Cost: 1α)</button>
+            <button id="grid4Upgrade" class="alphaButton" disabled>Unlock 4x4 Grid (Cost: 25α)</button>
+            <button id="grid5Upgrade" class="alphaButton" disabled>Unlock 5x5 Grid (Cost: 375α)</button>
+        </div>
+    </div>
+
+    <script>
+        class SlidePuzzle {
+            constructor() {
+                this.gridSize = 3;
+                this.grid = [];
+                this.emptyPos = [2, 2];
+                this.startTime = null;
+                this.elapsedTime = 0;
+                this.timerInterval = null;
+                this.firstMoveMade = false;
+                this.bestTime = null;
+                this.alpha = 0;
+                this.alphaIncrement = 1;
+                this.fibCost = 1;
+                this.has4x4 = false;
+                this.has5x5 = false;
+
+                this.initializeDOM();
+                this.initializeGrid();
+                this.createTiles();
+                this.shuffleTiles();
+                this.addPlaceholders();
+            }
+
+            initializeDOM() {
+                this.puzzleGrid = document.getElementById('puzzleGrid');
+                this.timeLabel = document.getElementById('timeLabel');
+                this.bestTimeLabel = document.getElementById('bestTimeLabel');
+                this.messageLabel = document.getElementById('message');
+                this.resetButton = document.getElementById('resetButton');
+                this.alphaLabel = document.getElementById('alphaLabel');
+                this.upgradeButton = document.getElementById('upgradeButton');
+                this.grid4Upgrade = document.getElementById('grid4Upgrade');
+                this.grid5Upgrade = document.getElementById('grid5Upgrade');
+                this.gridSelector = document.getElementById('gridSelector');
+
+                this.resetButton.addEventListener('click', () => this.resetPuzzle());
+                this.upgradeButton.addEventListener('click', () => this.upgradeAlpha());
+                this.grid4Upgrade.addEventListener('click', () => this.unlock4x4());
+                this.grid5Upgrade.addEventListener('click', () => this.unlock5x5());
+                this.gridSelector.addEventListener('change', (e) => {
+                    this.gridSize = parseInt(e.target.value);
+                    this.initializeGrid();
+                    this.createTiles();
+                    this.shuffleTiles();
+                });
+            }
+
+            addPlaceholders() {
+                const scrollContainer = document.getElementById('scrollContainer');
+                for (let i = 1; i <= 10; i++) {
+                    const placeholder = document.createElement('button');
+                    placeholder.className = 'placeholder';
+                    placeholder.textContent = `Future Upgrade ${i}`;
+                    placeholder.disabled = true;
+                    scrollContainer.appendChild(placeholder);
+                }
+            }
+
+            initializeGrid() {
+                this.grid = Array.from({ length: this.gridSize }, () => Array(this.gridSize).fill(null));
+                this.emptyPos = [this.gridSize - 1, this.gridSize - 1];
+                this.puzzleGrid.className = `grid-${this.gridSize}`;
+            }
+
+            createTiles() {
+                this.puzzleGrid.innerHTML = '';
+                for (let i = 0; i < this.gridSize; i++) {
+                    for (let j = 0; j < this.gridSize; j++) {
+                        const tile = document.createElement('button');
+                        tile.className = 'tile';
+                        tile.addEventListener('click', () => this.onTileClick(i, j));
+                        this.puzzleGrid.appendChild(tile);
+                        this.grid[i][j] = tile;
+                    }
+                }
+            }
+
+            shuffleTiles() {
+                let numbers = Array.from({ length: this.gridSize * this.gridSize }, (_, i) => i);
+                do {
+                    numbers = numbers.sort(() => Math.random() - 0.5);
+                } while (!this.isSolvable(numbers));
+
+                let index = 0;
+                for (let i = 0; i < this.gridSize; i++) {
+                    for (let j = 0; j < this.gridSize; j++) {
+                        const num = numbers[index++];
+                        if (num === 0) {
+                            this.grid[i][j].textContent = '';
+                            this.emptyPos = [i, j];
+                        } else {
+                            this.grid[i][j].textContent = num;
+                        }
+                    }
+                }
+
+                this.messageLabel.textContent = '';
+                this.resetTimer();
+            }
+
+            isSolvable(numbers) {
+                let invCount = 0;
+                const nums = numbers.filter(n => n !== 0);
+                for (let i = 0; i < nums.length; i++) {
+                    for (let j = i + 1; j < nums.length; j++) {
+                        if (nums[i] > nums[j]) invCount++;
+                    }
+                }
+                if (this.gridSize % 2 === 1) {
+                    return invCount % 2 === 0;
+                } else {
+                    const emptyRowFromBottom = this.gridSize - Math.floor(numbers.indexOf(0) / this.gridSize);
+                    return (invCount + emptyRowFromBottom) % 2 === 1;
+                }
+            }
+
+            onTileClick(i, j) {
+                if (this.messageLabel.textContent !== '') return;
+
+                const [ei, ej] = this.emptyPos;
+
+                // Check if clicked tile is in the same row or column as empty space
+                if (i === ei || j === ej) {
+                    if (i === ei) { // Same row
+                        const start = Math.min(j, ej);
+                        const end = Math.max(j, ej);
+                        
+                        // Move all tiles between clicked position and empty space
+                        if (j > ej) {
+                            for (let col = start+1; col <= end; col++) {
+                                this.moveTile(i, col);
+                            }
+                        } else if (j < ej) {
+                            for (let col = end-1; col >= start; col--) {
+                                this.moveTile(i, col);
+                            }
+                        }
+                    } else if (j === ej) { // Same column
+                        const start = Math.min(i, ei);
+                        const end = Math.max(i, ei);
+                        
+                        // Move all tiles between clicked position and empty space
+                        if (i > ei) {
+                            for (let row = start+1; row <= end; row++) {
+                                this.moveTile(row, j);
+                            }
+                        } else if (i < ei) {
+                            for (let row = end-1; row >= start; row--) {
+                                this.moveTile(row, j);
+                            }
+                        }
+                    }
+
+                    if (!this.firstMoveMade) {
+                        this.startTime = Date.now();
+                        this.firstMoveMade = true;
+                        this.startTimer();
+                    }
+
+                    if (this.checkWin()) this.onWin();
+                }
+            }
+
+            moveTile(i, j) {
+                const [ei, ej] = this.emptyPos;
+
+                // Move the empty space's content to the clicked tile's position
+                [this.grid[i][j].textContent, this.grid[ei][ej].textContent] = 
+                [this.grid[ei][ej].textContent, this.grid[i][j].textContent];
+
+                // Update the empty position to the current tile's position
+                this.emptyPos = [i, j];
+            }
+            
+            checkWin() {
+                let current = [];
+                for (let i = 0; i < this.gridSize; i++) {
+                    for (let j = 0; j < this.gridSize; j++) {
+                        current.push(this.grid[i][j].textContent);
+                    }
+                }
+                const expected = [...Array(this.gridSize * this.gridSize - 1).keys()]
+                    .map(n => String(n + 1)).concat(['']);
+                return current.join(',') === expected.join(',');
+            }
+
+            onWin() {
+                this.messageLabel.textContent = 'Congratulations! You solved it!';
+                clearInterval(this.timerInterval);
+                const totalTime = this.elapsedTime;
+                if (this.bestTime === null || totalTime < this.bestTime) {
+                    this.bestTime = totalTime;
+                    this.bestTimeLabel.textContent = `Best: ${this.bestTime.toFixed(2)}s`;
+                }
+
+                const multiplier = this.gridSize === 5 ? 9 : (this.gridSize === 4 ? 3 : 1);
+                this.alpha += (this.alphaIncrement * multiplier);
+                this.updateAlphaDisplay();
+            }
+
+            resetTimer() {
+                clearInterval(this.timerInterval);
+                this.elapsedTime = 0;
+                this.timeLabel.textContent = 'Time: 0.00s';
+                this.startTime = null;
+                this.firstMoveMade = false;
+            }
+
+            startTimer() {
+                this.timerInterval = setInterval(() => {
+                    this.elapsedTime = (Date.now() - this.startTime) / 1000;
+                    this.timeLabel.textContent = `Time: ${this.elapsedTime.toFixed(2)}s`;
+                }, 10);
+            }
+
+            resetPuzzle() {
+                this.createTiles();
+                this.shuffleTiles();
+            }
+
+            upgradeAlpha() {
+                if (this.alpha >= this.fibCost) {
+                    this.alpha -= this.fibCost;
+                    this.alphaIncrement++;
+                    this.updateFibCost();
+                    this.updateAlphaDisplay();
+                }
+            }
+
+            unlock4x4() {
+                if (this.alpha >= 25 && !this.has4x4) {
+                    this.alpha -= 25;
+                    this.has4x4 = true;
+                    this.gridSelector.disabled = false;
+                    this.gridSelector.options[1].disabled = false;
+                    this.updateAlphaDisplay();
+                }
+            }
+
+            unlock5x5() {
+                if (this.alpha >= 375 && this.has4x4 && !this.has5x5) {
+                    this.alpha -= 375;
+                    this.has5x5 = true;
+                    this.gridSelector.options[2].disabled = false;
+                    this.updateAlphaDisplay();
+                }
+            }
+
+            updateFibCost() {
+                let a = 1, b = 1;
+                for (let i = 0; i < this.alphaIncrement; i++) {
+                    [a, b] = [b, a + b];
+                }
+                this.fibCost = a;
+            }
+
+            updateAlphaDisplay() {
+                this.alphaLabel.textContent = `Alpha (α): ${this.alpha}`;
+                this.upgradeButton.textContent = `More Alpha (Cost: ${this.fibCost}α)`;
+                this.upgradeButton.disabled = this.alpha < this.fibCost;
+                this.grid4Upgrade.disabled = this.alpha < 25 || this.has4x4;
+                this.grid5Upgrade.disabled = this.alpha < 375 || !this.has4x4 || this.has5x5;
+            }
+        }
+
+        // Initialize the game
+        new SlidePuzzle();
+    </script>
+</body>
+</html>
