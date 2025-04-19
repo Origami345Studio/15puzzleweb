@@ -201,16 +201,71 @@
                 this.firstMoveMade = false;
                 this.bestTime = null;
                 this.alpha = 0;
-                this.alphaIncrement = 1;
+                this.alphaIncrement = 1; //OG: 1
                 this.fibCost = 1;
                 this.has4x4 = false;
                 this.has5x5 = false;
 
-                this.initializeDOM();
+                this.initializeDOM(); // Initialize DOM first
+                this.loadGameState(); // Then load saved data (can now safely access gridSelector)
+                this.updateAlphaDisplay()
+                
                 this.initializeGrid();
                 this.createTiles();
                 this.shuffleTiles();
                 this.addPlaceholders();
+            }
+
+            saveGameState() {
+                const gameState = {
+                    gridSize: this.gridSize,
+                    alpha: this.alpha,
+                    bestTime: this.bestTime,
+                    has4x4: this.has4x4,
+                    has5x5: this.has5x5,
+                    fibCost: this.fibCost,
+                    alphaIncrement: this.alphaIncrement,  // <-- Add this line
+                    gridOptions: Array.from(this.gridSelector.options).map(option => ({
+                        text: option.text,
+                        disabled: option.disabled
+                    }))
+                };
+                localStorage.setItem('slidePuzzleGameState', JSON.stringify(gameState));
+            }
+
+            loadGameState() {
+                const savedState = localStorage.getItem('slidePuzzleGameState');
+                if (savedState) {
+                    const {
+                        gridSize,
+                        alpha,
+                        bestTime,
+                        has4x4,
+                        has5x5,
+                        fibCost,
+                        alphaIncrement,  // <-- Add this line
+                        gridOptions = []
+                    } = JSON.parse(savedState);
+
+                    this.gridSize = gridSize || this.gridSize;
+                    this.alpha = alpha || this.alpha;
+                    this.bestTime = bestTime || this.bestTime;
+                    this.has4x4 = has4x4 || this.has4x4;
+                    this.has5x5 = has5x5 || this.has5x5;
+                    this.fibCost = fibCost || this.fibCost;
+                    this.alphaIncrement = alphaIncrement || this.alphaIncrement;
+
+                    if (this.gridSelector) {
+                        gridOptions.forEach((option, index) => {
+                            if (this.gridSelector.options[index]) {
+                                this.gridSelector.options[index].text = option.text;
+                                this.gridSelector.options[index].disabled = option.disabled;
+                            }
+                        });
+
+                        this.gridSelector.disabled = !(this.has4x4 || this.has5x5);
+                    }
+                }
             }
 
             initializeDOM() {
@@ -235,6 +290,8 @@
                     this.createTiles();
                     this.shuffleTiles();
                 });
+                this.updateAlphaDisplay(); // Update display with loaded alpha
+                this.bestTimeLabel.textContent = this.bestTime !== null ? `Best: ${this.bestTime.toFixed(2)}s` : 'Best: --';
             }
 
             addPlaceholders() {
@@ -388,6 +445,7 @@
                 const multiplier = this.gridSize === 5 ? 9 : (this.gridSize === 4 ? 3 : 1);
                 this.alpha += (this.alphaIncrement * multiplier);
                 this.updateAlphaDisplay();
+                this.saveGameState(); // Save state after winning
             }
 
             resetTimer() {
@@ -416,6 +474,7 @@
                     this.alphaIncrement++;
                     this.updateFibCost();
                     this.updateAlphaDisplay();
+                    this.saveGameState(); // Save state after incrementing
                 }
             }
 
@@ -423,9 +482,11 @@
                 if (this.alpha >= 25 && !this.has4x4) {
                     this.alpha -= 25;
                     this.has4x4 = true;
+                    this.gridSelector.options[1].text = "4x4 Grid"; // Change option text
                     this.gridSelector.disabled = false;
                     this.gridSelector.options[1].disabled = false;
                     this.updateAlphaDisplay();
+                    this.saveGameState(); // Save state after unlocking
                 }
             }
 
@@ -433,8 +494,10 @@
                 if (this.alpha >= 375 && this.has4x4 && !this.has5x5) {
                     this.alpha -= 375;
                     this.has5x5 = true;
-                    this.gridSelector.options[2].disabled = false;
+                    this.gridSelector.options[2].text = "5x5 Grid"; // Change option text
+                    this.gridSelector.options[2].disabled = false; // Enable the 5x5 option
                     this.updateAlphaDisplay();
+                    this.saveGameState(); // Save state after unlocking
                 }
             }
 
