@@ -145,9 +145,13 @@
             width: 100%;
         }
 
-        .alphaButton:disabled {
+        .alphaButton.disabled {
             background: #95a5a6;
             cursor: not-allowed;
+        }
+
+        .bought {
+            background: #7f8c8d;
         }
 
         .placeholder {
@@ -184,7 +188,8 @@
         <div id="alphaLabel">Aura (α): 0</div>
         <div id="scrollContainer">
             <button id="upgradeButton" class="alphaButton" disabled>More Aura (Cost: 1α)</button>
-            <button id="grid4Upgrade" class="alphaButton" disabled>Unlock 4x4 Grid (Cost: 25α)</button>
+            <button id="doubleAuraButton" class="alphaButton" disabled>Double Aura (Cost: 5α)</button>
+            <button id="grid4Upgrade" class="alphaButton" disabled>Unlock 4x4 Grid (Cost: 60α)</button>
             <button id="grid5Upgrade" class="alphaButton" disabled>Unlock 5x5 Grid (Cost: 375α)</button>
         </div>
     </div>
@@ -199,36 +204,34 @@
                 this.elapsedTime = 0;
                 this.timerInterval = null;
                 this.firstMoveMade = false;
-                this.bestTime = null;
+                this.solved = false;
+                this.bestTimes = { 3: null, 4: null, 5: null };
                 this.alpha = 0;
-                this.alphaIncrement = 1; //OG: 1
+                this.alphaIncrement = 1;
                 this.fibCost = 1;
+                this.doubleAuraMultiplier = 1;
                 this.has4x4 = false;
                 this.has5x5 = false;
 
-                this.initializeDOM(); // Initialize DOM first
-                this.loadGameState(); // Then load saved data (can now safely access gridSelector)
-                this.updateAlphaDisplay()
-                
+                this.initializeDOM();
+                this.loadGameState();
+                this.updateAlphaDisplay();
                 this.initializeGrid();
                 this.createTiles();
                 this.shuffleTiles();
-                this.addPlaceholders();
             }
 
             saveGameState() {
                 const gameState = {
                     gridSize: this.gridSize,
                     alpha: this.alpha,
-                    bestTime: this.bestTime,
+                    bestTimes: this.bestTimes,
                     has4x4: this.has4x4,
                     has5x5: this.has5x5,
                     fibCost: this.fibCost,
-                    alphaIncrement: this.alphaIncrement,  // <-- Add this line
-                    gridOptions: Array.from(this.gridSelector.options).map(option => ({
-                        text: option.text,
-                        disabled: option.disabled
-                    }))
+                    alphaIncrement: this.alphaIncrement,
+                    doubleAuraMultiplier: this.doubleAuraMultiplier,
+                    doubleAuraUpgrades: this.doubleAuraButton.dataset.upgrades || 0,
                 };
                 localStorage.setItem('slidePuzzleGameState', JSON.stringify(gameState));
             }
@@ -239,33 +242,46 @@
                     const {
                         gridSize,
                         alpha,
-                        bestTime,
+                        bestTimes,
                         has4x4,
                         has5x5,
                         fibCost,
-                        alphaIncrement,  // <-- Add this line
-                        gridOptions = []
+                        alphaIncrement,
+                        doubleAuraMultiplier,
+                        doubleAuraUpgrades,
                     } = JSON.parse(savedState);
 
-                    this.gridSize = gridSize || this.gridSize;
+                    this.gridSize = 3;
                     this.alpha = alpha || this.alpha;
-                    this.bestTime = bestTime || this.bestTime;
-                    this.has4x4 = has4x4 || this.has4x4;
-                    this.has5x5 = has5x5 || this.has5x5;
+                    this.bestTimes = bestTimes || this.bestTimes;
+                    this.has4x4 = has4x4 || this.has4x4; // Load unlock state
+                    this.has5x5 = has5x5 || this.has5x5; // Load unlock state
                     this.fibCost = fibCost || this.fibCost;
                     this.alphaIncrement = alphaIncrement || this.alphaIncrement;
+                    this.doubleAuraMultiplier = doubleAuraMultiplier || this.doubleAuraMultiplier;
+                    this.doubleAuraButton.dataset.upgrades = doubleAuraUpgrades || 0;
 
-                    if (this.gridSelector) {
-                        gridOptions.forEach((option, index) => {
-                            if (this.gridSelector.options[index]) {
-                                this.gridSelector.options[index].text = option.text;
-                                this.gridSelector.options[index].disabled = option.disabled;
-                            }
-                        });
-
-                        this.gridSelector.disabled = !(this.has4x4 || this.has5x5);
-                    }
+                    this.updateBestTimeLabel();
+                    this.updateGridSelector();
+                    this.updateDoubleAuraDisplay();
                 }
+            }
+
+            updateGridSelector() {
+                if (this.has4x4) {
+                    this.gridSelector.options[1].disabled = false;
+                    this.gridSelector.options[1].text = "4x4 Grid";
+                }
+                if (this.has5x5) {
+                    this.gridSelector.options[2].disabled = false;
+                    this.gridSelector.options[2].text = "5x5 Grid";
+                }
+                this.gridSelector.disabled = !(this.has4x4 || this.has5x5);
+            }
+
+            updateBestTimeLabel() {
+                const bestTime = this.bestTimes[this.gridSize];
+                this.bestTimeLabel.textContent = bestTime !== null ? `Best: ${bestTime.toFixed(2)}s` : 'Best: --';
             }
 
             initializeDOM() {
@@ -276,12 +292,14 @@
                 this.resetButton = document.getElementById('resetButton');
                 this.alphaLabel = document.getElementById('alphaLabel');
                 this.upgradeButton = document.getElementById('upgradeButton');
+                this.doubleAuraButton = document.getElementById('doubleAuraButton');
                 this.grid4Upgrade = document.getElementById('grid4Upgrade');
                 this.grid5Upgrade = document.getElementById('grid5Upgrade');
                 this.gridSelector = document.getElementById('gridSelector');
 
                 this.resetButton.addEventListener('click', () => this.resetPuzzle());
                 this.upgradeButton.addEventListener('click', () => this.upgradeAlpha());
+                this.doubleAuraButton.addEventListener('click', () => this.buyDoubleAura());
                 this.grid4Upgrade.addEventListener('click', () => this.unlock4x4());
                 this.grid5Upgrade.addEventListener('click', () => this.unlock5x5());
                 this.gridSelector.addEventListener('change', (e) => {
@@ -289,20 +307,11 @@
                     this.initializeGrid();
                     this.createTiles();
                     this.shuffleTiles();
+                    this.updateBestTimeLabel();
                 });
-                this.updateAlphaDisplay(); // Update display with loaded alpha
-                this.bestTimeLabel.textContent = this.bestTime !== null ? `Best: ${this.bestTime.toFixed(2)}s` : 'Best: --';
-            }
-
-            addPlaceholders() {
-                const scrollContainer = document.getElementById('scrollContainer');
-                for (let i = 1; i <= 10; i++) {
-                    const placeholder = document.createElement('button');
-                    placeholder.className = 'placeholder';
-                    placeholder.textContent = `Future Upgrade ${i}`;
-                    placeholder.disabled = true;
-                    scrollContainer.appendChild(placeholder);
-                }
+                this.updateAlphaDisplay();
+                this.updateBestTimeLabel();
+                this.updateDoubleAuraDisplay();
             }
 
             initializeGrid() {
@@ -342,8 +351,9 @@
                         }
                     }
                 }
-
-                this.messageLabel.textContent = '';
+                
+                const multiplier = this.gridSize === 5 ? 9 : (this.gridSize === 4 ? 3 : 1);
+                this.messageLabel.textContent = `${this.alphaIncrement * multiplier * this.doubleAuraMultiplier}α for solving the puzzle`;
                 this.resetTimer();
             }
 
@@ -364,37 +374,32 @@
             }
 
             onTileClick(i, j) {
-                if (this.messageLabel.textContent !== '') return;
+                if (this.solved) return;
 
                 const [ei, ej] = this.emptyPos;
 
-                // Check if clicked tile is in the same row or column as empty space
                 if (i === ei || j === ej) {
-                    if (i === ei) { // Same row
+                    if (i === ei) {
                         const start = Math.min(j, ej);
                         const end = Math.max(j, ej);
-                        
-                        // Move all tiles between clicked position and empty space
                         if (j > ej) {
-                            for (let col = start+1; col <= end; col++) {
+                            for (let col = start + 1; col <= end; col++) {
                                 this.moveTile(i, col);
                             }
                         } else if (j < ej) {
-                            for (let col = end-1; col >= start; col--) {
+                            for (let col = end - 1; col >= start; col--) {
                                 this.moveTile(i, col);
                             }
                         }
-                    } else if (j === ej) { // Same column
+                    } else if (j === ej) {
                         const start = Math.min(i, ei);
                         const end = Math.max(i, ei);
-                        
-                        // Move all tiles between clicked position and empty space
                         if (i > ei) {
-                            for (let row = start+1; row <= end; row++) {
+                            for (let row = start + 1; row <= end; row++) {
                                 this.moveTile(row, j);
                             }
                         } else if (i < ei) {
-                            for (let row = end-1; row >= start; row--) {
+                            for (let row = end - 1; row >= start; row--) {
                                 this.moveTile(row, j);
                             }
                         }
@@ -412,15 +417,11 @@
 
             moveTile(i, j) {
                 const [ei, ej] = this.emptyPos;
-
-                // Move the empty space's content to the clicked tile's position
-                [this.grid[i][j].textContent, this.grid[ei][ej].textContent] = 
+                [this.grid[i][j].textContent, this.grid[ei][ej].textContent] =
                 [this.grid[ei][ej].textContent, this.grid[i][j].textContent];
-
-                // Update the empty position to the current tile's position
                 this.emptyPos = [i, j];
             }
-            
+
             checkWin() {
                 let current = [];
                 for (let i = 0; i < this.gridSize; i++) {
@@ -434,18 +435,20 @@
             }
 
             onWin() {
-                this.messageLabel.textContent = 'Congratulations! You solved it!';
+                const multiplier = this.gridSize === 5 ? 9 : (this.gridSize === 4 ? 3 : 1);
+                this.messageLabel.textContent = `+${this.alphaIncrement * multiplier * this.doubleAuraMultiplier}α! Click Reset to play again!`;
+                this.solved = true;
                 clearInterval(this.timerInterval);
                 const totalTime = this.elapsedTime;
-                if (this.bestTime === null || totalTime < this.bestTime) {
-                    this.bestTime = totalTime;
-                    this.bestTimeLabel.textContent = `Best: ${this.bestTime.toFixed(2)}s`;
+
+                if (this.bestTimes[this.gridSize] === null || totalTime < this.bestTimes[this.gridSize]) {
+                    this.bestTimes[this.gridSize] = totalTime;
+                    this.updateBestTimeLabel();
                 }
 
-                const multiplier = this.gridSize === 5 ? 9 : (this.gridSize === 4 ? 3 : 1);
-                this.alpha += (this.alphaIncrement * multiplier);
+                this.alpha += (this.alphaIncrement * multiplier * this.doubleAuraMultiplier);
                 this.updateAlphaDisplay();
-                this.saveGameState(); // Save state after winning
+                this.saveGameState();
             }
 
             resetTimer() {
@@ -454,6 +457,7 @@
                 this.timeLabel.textContent = 'Time: 0.00s';
                 this.startTime = null;
                 this.firstMoveMade = false;
+                this.solved = false;
             }
 
             startTimer() {
@@ -473,20 +477,34 @@
                     this.alpha -= this.fibCost;
                     this.alphaIncrement++;
                     this.updateFibCost();
+                    this.saveGameState();
                     this.updateAlphaDisplay();
-                    this.saveGameState(); // Save state after incrementing
+                }
+            }
+
+            buyDoubleAura() {
+                const cost = 5 * Math.pow(5, this.doubleAuraButton.dataset.upgrades || 0);
+                if (this.alpha >= cost) {
+                    this.alpha -= cost;
+                    this.doubleAuraMultiplier *= 2;
+                    this.updateAlphaDisplay();
+                    this.doubleAuraButton.dataset.upgrades = (parseInt(this.doubleAuraButton.dataset.upgrades) || 0) + 1;
+                    this.saveGameState();
+                    this.updateDoubleAuraDisplay();
                 }
             }
 
             unlock4x4() {
-                if (this.alpha >= 25 && !this.has4x4) {
-                    this.alpha -= 25;
+                if (this.alpha >= 60 && !this.has4x4) {
+                    this.alpha -= 60;
                     this.has4x4 = true;
-                    this.gridSelector.options[1].text = "4x4 Grid"; // Change option text
-                    this.gridSelector.disabled = false;
+                    this.grid4Upgrade.textContent = "Unlock 4x4 Grid (Bought)";
+                    this.grid4Upgrade.classList.add('bought');
+                    this.gridSelector.options[1].text = "4x4 Grid";
                     this.gridSelector.options[1].disabled = false;
+                    this.gridSelector.disabled = false;
                     this.updateAlphaDisplay();
-                    this.saveGameState(); // Save state after unlocking
+                    this.saveGameState();
                 }
             }
 
@@ -494,10 +512,12 @@
                 if (this.alpha >= 375 && this.has4x4 && !this.has5x5) {
                     this.alpha -= 375;
                     this.has5x5 = true;
-                    this.gridSelector.options[2].text = "5x5 Grid"; // Change option text
-                    this.gridSelector.options[2].disabled = false; // Enable the 5x5 option
+                    this.grid5Upgrade.textContent = "Unlock 5x5 Grid (Bought)";
+                    this.grid5Upgrade.classList.add('bought');
+                    this.gridSelector.options[2].text = "5x5 Grid";
+                    this.gridSelector.options[2].disabled = false;
                     this.updateAlphaDisplay();
-                    this.saveGameState(); // Save state after unlocking
+                    this.saveGameState();
                 }
             }
 
@@ -513,8 +533,33 @@
                 this.alphaLabel.textContent = `Aura (α): ${this.alpha}`;
                 this.upgradeButton.textContent = `More Aura (Cost: ${this.fibCost}α)`;
                 this.upgradeButton.disabled = this.alpha < this.fibCost;
-                this.grid4Upgrade.disabled = this.alpha < 25 || this.has4x4;
+                this.upgradeButton.classList.toggle('disabled', this.alpha < this.fibCost); // Update color
+
+                this.updateDoubleAuraDisplay();
+                this.grid4Upgrade.disabled = this.alpha < 60 || this.has4x4;
                 this.grid5Upgrade.disabled = this.alpha < 375 || !this.has4x4 || this.has5x5;
+
+                // Update color for Unlock buttons
+                this.grid4Upgrade.classList.toggle('disabled', this.alpha < 60 || this.has4x4);
+                if (this.has4x4) {
+                    this.grid4Upgrade.textContent = "Unlock 4x4 Grid (Bought)";
+                } else {
+                    this.grid4Upgrade.textContent = "Unlock 4x4 Grid (Cost: 60α)";
+                }
+
+                this.grid5Upgrade.classList.toggle('disabled', this.alpha < 375 || !this.has4x4 || this.has5x5);
+                if (this.has5x5) {
+                    this.grid5Upgrade.textContent = "Unlock 5x5 Grid (Bought)";
+                } else {
+                    this.grid5Upgrade.textContent = "Unlock 5x5 Grid (Cost: 375α)";
+                }
+            }
+
+            updateDoubleAuraDisplay() {
+                const cost = 5 * Math.pow(5, this.doubleAuraButton.dataset.upgrades || 0);
+                this.doubleAuraButton.textContent = `Double Aura (Cost: ${cost}α)`;
+                this.doubleAuraButton.disabled = this.alpha < cost;
+                this.doubleAuraButton.classList.toggle('disabled', this.alpha < cost); // Update color
             }
         }
 
